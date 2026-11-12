@@ -35,6 +35,11 @@ export function App(): React.JSX.Element {
   usePiEvents()
   useMenuActions()
   useInitialize()
+  // Refresh the tab strip when the main process creates a Crystal worktree.
+  // Do not activate it: the human's current chat and editor retain focus.
+  useEffect(() => window.piDesktop.workspace.onCreatedExternally(() => {
+    void useAppStore.getState().loadWorkspaces()
+  }), [])
   const { isDraggingFolder } = useFolderDrop()
 
   const currentView = useAppStore((state) => state.currentView)
