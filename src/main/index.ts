@@ -6,6 +6,7 @@ import { workspaceTrustStore } from './workspace-trust'
 import { PREVIEW_PARTITIONS } from '../shared/preview-partitions'
 import { isBlockedPreviewRequest, previewGuestPreferences } from './preview-guest'
 import { WorkspaceManager } from './workspace-manager'
+import { startCrystalControl } from './crystal-control'
 import type { WorkspaceTerminals } from './workspace-terminals'
 import { registerIpcHandlers, loadAppSettings, saveAppSettings } from './ipc-handlers'
 import { setPiExecutableOverride, cleanupPiChildTempDir } from './pi-rpc-manager'
@@ -119,18 +120,6 @@ async function reloadMainWindowWithGuard(ignoreCache: boolean): Promise<void> {
   else window.webContents.reload()
 }
 
-// Single-instance lock: with "minimize to tray" the window can be hidden while
-// the app keeps running, so a relaunch (taskbar, launcher, `pi-desktop <path>`)
-// must focus the existing instance instead of spawning a second one. The second
-// process exits immediately; the first receives 'second-instance'.
-if (!app.requestSingleInstanceLock()) {
-  app.quit()
-} else {
-  app.on('second-instance', () => {
-    showMainWindow()
-  })
-}
-
 // PI_DESKTOP_USER_DATA_DIR set by the launching process overrides the
 // canonical appData-derived directory: that exact directory holds all GUI
 // data and legacy migration is skipped, keeping it fully isolated.
@@ -139,6 +128,17 @@ const userDataDir = externalUserDataDir ?? getCanonicalUserDataDir(app.getPath('
 mkdirSync(userDataDir, { recursive: true })
 app.setPath('userData', userDataDir)
 configureGuiDataDir(userDataDir)
+
+// Establish the single-instance lock AFTER selecting userData. A disposable
+// PI_DESKTOP_USER_DATA_DIR must not collide with the user's normal Pi Desktop
+// instance or redirect a test launch into an existing chat window.
+if (!app.requestSingleInstanceLock()) {
+  app.quit()
+} else {
+  app.on('second-instance', () => {
+    showMainWindow()
+  })
+}
 
 // Voice dictation on the GPU needs WebGPU, which Chromium keeps off on Linux
 // unless it starts with extra switches. Set them now, before the app is ready.
@@ -491,6 +491,10 @@ app.whenReady().then(async () => {
 
   // Before the menu, window, and tray exist, so they are built in the saved language.
   applyLanguageSetting(settings.language)
+
+  // Local Crystal control is opt-in. Main process reuses native workspace creation.
+  const stopCrystalControl = await startCrystalControl(workspaceManager, settings, () => mainWindow)
+  app.on('before-quit', stopCrystalControl)
 
   // Register IPC handlers before creating windows. The window getter is a
   // lazy closure — mainWindow is created later and the notification wiring

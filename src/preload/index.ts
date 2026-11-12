@@ -199,6 +199,7 @@ interface PiDesktopAPI {
     list(): Promise<Workspace[]>
     create(name: string, path: string): Promise<Workspace>
     createTab(options?: WorkspaceTabOptions): Promise<Workspace>
+    onCreatedExternally(callback: (workspaceId: string) => void): () => void
     remove(workspaceId: string): Promise<WorkspaceRemoveResult>
     rename(workspaceId: string, name: string): Promise<void>
     changePath(workspaceId: string, newPath: string): Promise<void>
@@ -541,6 +542,13 @@ const api: PiDesktopAPI = {
     startPi: (workspaceId, options) => ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_START_PI, workspaceId, options),
     stopPi: (workspaceId) => ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_STOP_PI, workspaceId),
     createTab: (options) => ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_CREATE_TAB, options),
+    onCreatedExternally: (callback: (workspaceId: string) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, workspaceId: unknown) => {
+        if (typeof workspaceId === 'string') callback(workspaceId)
+      }
+      ipcRenderer.on('crystal:workspace-created', listener)
+      return () => ipcRenderer.removeListener('crystal:workspace-created', listener)
+    },
     getActivity: () => ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_ACTIVITY_GET),
     takePendingActivation: () => ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_TAKE_PENDING_ACTIVATION),
   },
