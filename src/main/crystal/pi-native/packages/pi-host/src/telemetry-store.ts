@@ -139,9 +139,16 @@ export class PiTelemetryStore {
 
   upsertRuntime(raw: PiRuntimeObservation): void {
     if (!raw.runtimeId || !raw.workspaceId) return
-    const prior = this.sessions.get(raw.runtimeId)
+    const current = this.sessions.get(raw.runtimeId)
     if (raw.closed) {
-      if (prior) {
+      // A runtime ID alone is not an incarnation identity. An old workspace or
+      // session may close after this ID has already been reused elsewhere.
+      const sessionId = typeof raw.sessionId === 'string' ? short(raw.sessionId, 160) : null
+      const matches = current && current.workspaceId === raw.workspaceId &&
+        current.sessionId === sessionId &&
+        (current.pid === null || raw.pid === current.pid)
+      if (matches) {
+        const prior = current
         this.emit(prior.workspaceId, prior.runtimeId, {
           type: 'runtime', process: 'stopped', activity: prior.activity, active: false, closed: true,
         })
@@ -149,6 +156,17 @@ export class PiTelemetryStore {
       }
       return
     }
+    // Workspace ownership is a trust boundary, even when the destination has
+    // no binding yet. Close the old observation before replacing it so its
+    // project subscribers can remove it using only the old correlation. Never
+    // infer the destination project/attempt or evidence from a reused runtime
+    // ID; only an unchanged workspace may retain the previous state.
+    if (current && current.workspaceId !== raw.workspaceId) {
+      this.emit(current.workspaceId, current.runtimeId, {
+        type: 'runtime', process: 'stopped', activity: current.activity, active: false, closed: true,
+      })
+    }
+    const prior = current?.workspaceId === raw.workspaceId ? current : undefined
     const session: TelemetrySession = {
       runtimeId: raw.runtimeId,
       workspaceId: raw.workspaceId,
