@@ -13,12 +13,6 @@ import { startHostedCrystal } from './crystal-controller-host'
 function normalize(value: string): string {
   return path.win32.resolve(value).replace(/[\\/]+$/, '').toLowerCase()
 }
-function isWithin(candidate: string, root: string): boolean {
-  const absolute = normalize(candidate)
-  const base = normalize(root)
-  return absolute === base || absolute.startsWith(base + '\\')
-}
-
 export async function startCrystalControl(
   workspaceManager: WorkspaceManager,
   settings: AppSettings,
@@ -35,6 +29,30 @@ export async function startCrystalControl(
   ))
   if (allowedProjects.size === 0) throw new Error('Crystal control project allowlist is empty')
   const journal = new FileProvisionJournal(path.join(app.getPath('userData'), 'crystal-provision-journal'))
+  const sourceCreations = new Map<string, Promise<ReturnType<WorkspaceManager['getWorkspaces']>[number]>>()
+  const resolveSource = async (projectId: string, sourceId: string) => {
+    const root = projectRoots[projectId]
+    if (!allowedProjects.has(projectId) || !root) return undefined
+    let source = workspaceManager.getWorkspaces().find(w =>
+      sourceId === `project:${projectId}`
+        ? w.kind !== 'worktree' && normalize(w.path) === normalize(root)
+        : w.id === sourceId)
+    if (!source && sourceId === `project:${projectId}`) {
+      let creating = sourceCreations.get(projectId)
+      if (!creating) {
+        creating = (async () => {
+          const git = await inspectGitRepository(root)
+          if (normalize(git.repoRoot) !== normalize(root)) throw new Error('Project root is not the enrolled repository')
+          return workspaceManager.createWorkspace(projectId, root)
+        })()
+        sourceCreations.set(projectId, creating)
+      }
+      try { source = await creating } finally { sourceCreations.delete(projectId) }
+    }
+    if (!source) return undefined
+    const git = await inspectGitRepository(source.path).catch(() => null)
+    return git && normalize(git.repoRoot) === normalize(root) ? source : undefined
+  }
   const server = createPiDesktopControlServer({
     token,
     journal,
@@ -50,23 +68,17 @@ export async function startCrystalControl(
         })
       },
       getSourceWorkspace: async (projectId, sourceId) => {
-        const source = workspaceManager.getWorkspaces().find(w => w.id === sourceId)
-        const allowedRoot = projectRoots[projectId]
-        if (!source || !allowedProjects.has(projectId) || !allowedRoot) return undefined
-        const git = await inspectGitRepository(source.path).catch(() => null)
-        const repoRoot = git?.repoRoot
-        return repoRoot && isWithin(repoRoot, allowedRoot)
-          ? { id: source.id, repoRoot } : undefined
+        const source = await resolveSource(projectId, sourceId)
+        return source ? { id: sourceId, repoRoot: projectRoots[projectId]! } : undefined
       },
       createNativeWorktree: async input => {
-        const source = workspaceManager.getWorkspaces().find(w => w.id === input.sourceWorkspaceId)
-        const root = projectRoots[input.projectId]
-        if (!source || !root || !isWithin(source.repoRoot ?? source.path, root))
+        const source = await resolveSource(input.projectId, input.sourceWorkspaceId)
+        if (!source)
           throw new Error('Source workspace is not enrolled under project root')
         // This calls the EXACT native path used by the Pi Desktop new-tab button.
         // No taskPrompt is supplied; Crystal delivers through Messenger once session is live.
         const workspace = await workspaceManager.createWorktreeWorkspace({
-          sourceWorkspaceId: input.sourceWorkspaceId,
+          sourceWorkspaceId: source.id,
           name: input.name,
           startPi: true,
         })
