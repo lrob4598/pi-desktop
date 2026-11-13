@@ -115,3 +115,15 @@ test('worktree names are deterministic and isolated by workspace id', () => {
   const target = worktreeTargetPath('/tmp/gui/worktrees', '/repo/My App', 'ws-123-abc')
   assert.match(target.replaceAll('\\', '/'), /\/tmp\/gui\/worktrees\/my-app\/my-app-ws-123-abc$/)
 })
+
+test('configured project worktree root groups Pi tabs by repository', () => {
+  const previous = process.env.PI_DESKTOP_PROJECT_WORKTREES_ROOT
+  try {
+    process.env.PI_DESKTOP_PROJECT_WORKTREES_ROOT = '/human/Github'
+    const target = worktreeTargetPath('/old/worktrees', '/repo/Crystal', 'ws-123')
+    assert.match(target.replaceAll('\\', '/'), /\/human\/Github\/Crystal-worktrees\/pi-desktop\/crystal-ws-123$/)
+  } finally {
+    if (previous === undefined) delete process.env.PI_DESKTOP_PROJECT_WORKTREES_ROOT
+    else process.env.PI_DESKTOP_PROJECT_WORKTREES_ROOT = previous
+  }
+})

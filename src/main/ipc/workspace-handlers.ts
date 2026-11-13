@@ -35,11 +35,12 @@ function validateWorkspaceTabOptions(value: unknown): WorkspaceTabOptions {
  */
 export function startNewTabInBackground(
   workspaceManager: WorkspaceManager, workspace: Workspace, settings: AppSettings, forkSessionPath?: string,
+  modelOverride?: { provider: string; model: string },
 ): void {
   void workspaceManager.startPiForWorkspace(
     workspace.id,
     applyPermissionModeToStartOptions(
-      applyResumePreference(applyModelDefaults({ cwd: workspace.path, forkSessionPath }, settings), settings),
+      applyResumePreference(applyModelDefaults({ cwd: workspace.path, forkSessionPath, ...modelOverride }, settings), settings),
       settings
     )
   ).catch((error) => appLog.warn('workspaces', 'Background tab Pi start failed', error))

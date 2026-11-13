@@ -7,6 +7,8 @@ import { startNewTabInBackground } from './ipc/workspace-handlers'
 import { inspectGitRepository } from './git-worktree'
 import { createPiDesktopControlServer, listenPiDesktopControl } from './crystal/desktop-control-server'
 import { FileProvisionJournal } from './crystal/desktop-control-journal'
+import { startCrystalNativeTelemetry } from './crystal/native-telemetry-host'
+import { startHostedCrystal } from './crystal-controller-host'
 
 function normalize(value: string): string {
   return path.win32.resolve(value).replace(/[\\/]+$/, '').toLowerCase()
@@ -69,7 +71,8 @@ export async function startCrystalControl(
           startPi: true,
         })
         if (!workspace.branch || workspace.kind !== 'worktree') throw new Error('Native worktree metadata missing')
-        startNewTabInBackground(workspaceManager, workspace, settings)
+        startNewTabInBackground(workspaceManager, workspace, settings, undefined,
+          input.provider && input.model ? { provider: input.provider, model: input.model } : undefined)
         getWindow()?.webContents.send('crystal:workspace-created', workspace.id)
         return {
           id: workspace.id, path: workspace.path, branch: workspace.branch,
@@ -79,5 +82,22 @@ export async function startCrystalControl(
     },
   })
   await listenPiDesktopControl(server)
-  return () => server.close()
+  let stopTelemetry: () => void = () => {}
+  if (process.env.CRYSTAL_PI_TELEMETRY === '1') {
+    try {
+      stopTelemetry = await startCrystalNativeTelemetry(workspaceManager, journal, token, allowedProjects,
+        process.env.CRYSTAL_PI_TELEMETRY_PIPE)
+    } catch (error) {
+      console.error('Crystal Pi telemetry unavailable:', error)
+    }
+  }
+  let stopController: () => void
+  try {
+    stopController = await startHostedCrystal()
+  } catch (error) {
+    stopTelemetry()
+    server.close()
+    throw error
+  }
+  return () => { stopController(); stopTelemetry(); server.close() }
 }

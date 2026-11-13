@@ -185,6 +185,10 @@ export function worktreeTargetPath(
   workspaceId: string,
 ): string {
   const repoName = slugifyWorktreePart(basename(repoRoot))
+  const projectWorktrees = process.env.PI_DESKTOP_PROJECT_WORKTREES_ROOT
+  if (projectWorktrees) {
+    return join(projectWorktrees, `${basename(repoRoot)}-worktrees`, 'pi-desktop', `${repoName}-${workspaceId}`)
+  }
   return join(guiWorktreesDir, repoName, `${repoName}-${workspaceId}`)
 }
 
