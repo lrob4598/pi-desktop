@@ -14,7 +14,7 @@ writeFileSync(process.env.HOST_TEST_RECEIPT, JSON.stringify({ pid: process.pid, 
 process.on('message', message => { if (message === 'crystal:shutdown') process.exit(0) });
 process.on('disconnect', () => process.exit(0));
 setInterval(() => {}, 1000);`)
-  let stop: (() => void) | undefined
+  let stop: (() => Promise<void>) | undefined
   try {
     stop = await startHostedCrystal({
       ...process.env,
@@ -31,7 +31,7 @@ setInterval(() => {}, 1000);`)
     }
     assert.equal(result?.marker, 'forwarded')
     assert.ok(result?.pid)
-    stop()
+    await stop()
     stop = undefined
     for (let i = 0; i < 50; i++) {
       try { process.kill(result.pid, 0) } catch { return }
@@ -39,7 +39,7 @@ setInterval(() => {}, 1000);`)
     }
     assert.fail('hosted controller did not exit')
   } finally {
-    stop?.()
+    if (stop) await stop()
     await rm(root, { recursive: true, force: true })
   }
 })

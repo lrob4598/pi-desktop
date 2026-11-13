@@ -5,9 +5,9 @@ import { isAbsolute } from 'node:path'
  * Pi Desktop owns this controller's lifetime. The child runs the existing
  * Crystal scheduler and its exclusive data-root lock remains authoritative.
  */
-export async function startHostedCrystal(env: NodeJS.ProcessEnv = process.env): Promise<() => void> {
+export async function startHostedCrystal(env: NodeJS.ProcessEnv = process.env): Promise<() => Promise<void>> {
   const entry = env.CRYSTAL_HOSTED_CONTROLLER_ENTRY
-  if (!entry) return () => {}
+  if (!entry) return async () => {}
   const node = env.CRYSTAL_HOSTED_NODE
   if (!isAbsolute(entry) || !node || !isAbsolute(node)) {
     throw new Error('Hosted Crystal requires absolute Node and controller paths')
@@ -27,11 +27,18 @@ export async function startHostedCrystal(env: NodeJS.ProcessEnv = process.env): 
   child.once('exit', (code, signal) => {
     if (code !== 0) console.error('Hosted Crystal exited', { code, signal })
   })
-  return () => {
-    if (child.exitCode === null && child.signalCode === null && child.connected) {
-      child.send('crystal:shutdown', error => {
-        if (error && child.exitCode === null && child.signalCode === null) child.kill()
-      })
-    }
+  return async () => {
+    if (child.exitCode !== null || child.signalCode !== null) return
+    await new Promise<void>(resolve => {
+      const timeout = setTimeout(() => {
+        if (child.exitCode === null && child.signalCode === null) child.kill()
+      }, 5000)
+      child.once('exit', () => { clearTimeout(timeout); resolve() })
+      if (child.connected) {
+        child.send('crystal:shutdown', error => {
+          if (error && child.exitCode === null && child.signalCode === null) child.kill()
+        })
+      } else child.kill()
+    })
   }
 }

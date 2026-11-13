@@ -23,8 +23,8 @@ export async function startCrystalControl(
   workspaceManager: WorkspaceManager,
   settings: AppSettings,
   getWindow: () => BrowserWindow | null,
-): Promise<() => void> {
-  if (process.env.CRYSTAL_PI_CONTROL !== '1') return () => {}
+): Promise<() => Promise<void>> {
+  if (process.env.CRYSTAL_PI_CONTROL !== '1') return async () => {}
   const tokenFile = process.env.CRYSTAL_PI_TOKEN_FILE
   const projectsFile = process.env.CRYSTAL_PI_PROJECTS_FILE
   if (!tokenFile || !projectsFile) throw new Error('Crystal control requires token and project map files')
@@ -91,7 +91,7 @@ export async function startCrystalControl(
       console.error('Crystal Pi telemetry unavailable:', error)
     }
   }
-  let stopController: () => void
+  let stopController: () => Promise<void>
   try {
     stopController = await startHostedCrystal()
   } catch (error) {
@@ -99,5 +99,9 @@ export async function startCrystalControl(
     server.close()
     throw error
   }
-  return () => { stopController(); stopTelemetry(); server.close() }
+  return async () => {
+    await stopController()
+    stopTelemetry()
+    await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()))
+  }
 }

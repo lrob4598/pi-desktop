@@ -85,6 +85,7 @@ let mainWindow: BrowserWindow | null = null
 let isQuitting = false
 let shutdownPending: Promise<void> | null = null
 let shutdownComplete = false
+let stopCrystalControl: () => Promise<void> = async () => {}
 
 // Guards the renderer's unsaved editor buffer against teardown. The renderer
 // mirrors its dirty flag here (ui:editor-dirty-set); quit, non-tray window
@@ -220,6 +221,7 @@ function createMainWindow(): BrowserWindow {
 
   // Graceful show (avoid white flash)
   window.once('ready-to-show', () => {
+    if (process.env.PI_DESKTOP_START_HIDDEN === '1') return
     window.show()
     window.focus()
   })
@@ -493,8 +495,7 @@ app.whenReady().then(async () => {
   applyLanguageSetting(settings.language)
 
   // Local Crystal control is opt-in. Main process reuses native workspace creation.
-  const stopCrystalControl = await startCrystalControl(workspaceManager, settings, () => mainWindow)
-  app.on('before-quit', stopCrystalControl)
+  stopCrystalControl = await startCrystalControl(workspaceManager, settings, () => mainWindow)
 
   // Register IPC handlers before creating windows. The window getter is a
   // lazy closure — mainWindow is created later and the notification wiring
@@ -580,7 +581,9 @@ app.on('will-quit', (event) => {
     event.preventDefault()
     // The executor turns a synchronous stopAll() throw into a rejection, so a
     // failed teardown is logged and the quit still resumes instead of hanging.
-    shutdownPending ??= new Promise<void>((resolve) => resolve(workspaceManager?.stopAll()))
+    shutdownPending ??= stopCrystalControl()
+      .catch((error) => appLog.warn('app', 'Failed to stop Crystal on quit', error))
+      .then(() => workspaceManager?.stopAll())
       .catch((error) => appLog.warn('app', 'Failed to stop workspaces on quit', error))
       .then(() => {
         shutdownComplete = true
