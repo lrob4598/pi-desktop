@@ -200,9 +200,13 @@ export async function createGitWorktree(options: {
   sourceCwd: string
   targetPath: string
   branch: string
+  baseCommit?: string
 }): Promise<void> {
+  if (options.baseCommit && !/^[a-f0-9]{40}$/i.test(options.baseCommit)) {
+    throw new Error('Invalid worktree base commit')
+  }
   await mkdir(dirname(options.targetPath), { recursive: true })
-  await runGit(['worktree', 'add', '-b', options.branch, options.targetPath, 'HEAD'], options.sourceCwd)
+  await runGit(['worktree', 'add', '-b', options.branch, options.targetPath, options.baseCommit ?? 'HEAD'], options.sourceCwd)
 }
 
 /** Remove only a clean worktree. Git refuses dirty worktrees, preserving edits. */

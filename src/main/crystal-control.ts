@@ -1,5 +1,6 @@
 import { app, BrowserWindow } from 'electron'
 import { readFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
 import path from 'node:path'
 import type { WorkspaceManager } from './workspace-manager'
 import type { AppSettings } from '../shared/ipc-contracts'
@@ -12,6 +13,23 @@ import { startHostedCrystal } from './crystal-controller-host'
 
 function normalize(value: string): string {
   return path.win32.resolve(value).replace(/[\\/]+$/, '').toLowerCase()
+}
+
+function originBaseCommit(cwd: string): string | undefined {
+  let defaultRef: string | undefined
+  try {
+    defaultRef = execFileSync('git', ['symbolic-ref', '--quiet', 'refs/remotes/origin/HEAD'],
+      { cwd, encoding: 'utf8', windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'] }).trim()
+  } catch { /* A local repository can have no remote default branch. */ }
+  for (const ref of [defaultRef, 'refs/remotes/origin/main', 'refs/remotes/origin/master']) {
+    if (!ref) continue
+    try {
+      const commit = execFileSync('git', ['rev-parse', '--verify', ref + '^{commit}'],
+        { cwd, encoding: 'utf8', windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'] }).trim()
+      if (/^[a-f0-9]{40}$/i.test(commit)) return commit
+    } catch { /* Try the next available remote reference. */ }
+  }
+  return undefined
 }
 export async function startCrystalControl(
   workspaceManager: WorkspaceManager,
@@ -81,6 +99,8 @@ export async function startCrystalControl(
           sourceWorkspaceId: source.id,
           name: input.name,
           startPi: true,
+          ...(input.sourceWorkspaceId === `project:${input.projectId}`
+            ? { baseCommit: originBaseCommit(source.path) } : {}),
         })
         if (!workspace.branch || workspace.kind !== 'worktree') throw new Error('Native worktree metadata missing')
         startNewTabInBackground(workspaceManager, workspace, settings, undefined,
@@ -97,7 +117,9 @@ export async function startCrystalControl(
   let stopTelemetry: () => void = () => {}
   if (process.env.CRYSTAL_PI_TELEMETRY === '1') {
     try {
-      stopTelemetry = await startCrystalNativeTelemetry(workspaceManager, journal, token, allowedProjects,
+      const telemetryTokenFile = process.env.CRYSTAL_PI_TELEMETRY_TOKEN_FILE
+      const telemetryToken = telemetryTokenFile ? readFileSync(telemetryTokenFile, 'utf8').trim() : token
+      stopTelemetry = await startCrystalNativeTelemetry(workspaceManager, journal, telemetryToken, allowedProjects,
         process.env.CRYSTAL_PI_TELEMETRY_PIPE)
     } catch (error) {
       console.error('Crystal Pi telemetry unavailable:', error)

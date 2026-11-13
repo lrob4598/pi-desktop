@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { test } from 'node:test'
 import {
   describeGitFailure,
+  createGitWorktree,
   GIT_FATAL_EXIT_CODE,
   GitCommandError,
   isMissingRepositoryError,
@@ -125,5 +126,34 @@ test('configured project worktree root groups Pi tabs by repository', () => {
   } finally {
     if (previous === undefined) delete process.env.PI_DESKTOP_PROJECT_WORKTREES_ROOT
     else process.env.PI_DESKTOP_PROJECT_WORKTREES_ROOT = previous
+  }
+})
+
+test('native worktree uses the verified commit rather than a stale source checkout', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'pi-base-'))
+  const repo = join(root, 'repo')
+  const target = join(root, 'task')
+  const git = (...args: string[]) => {
+    const result = spawnSync('git', args, { cwd: repo, encoding: 'utf8' })
+    assert.equal(result.status, 0, result.stderr)
+    return result.stdout.trim()
+  }
+  try {
+    await mkdir(repo)
+    git('init', '-q')
+    git('config', 'user.name', 'Pi fixture')
+    git('config', 'user.email', 'fixture@example.invalid')
+    await writeFile(join(repo, 'file.txt'), 'first')
+    git('add', 'file.txt')
+    git('commit', '-qm', 'first')
+    const base = git('rev-parse', 'HEAD')
+    await writeFile(join(repo, 'file.txt'), 'second')
+    git('commit', '-qam', 'second')
+    await createGitWorktree({ sourceCwd: repo, targetPath: target, branch: 'pi/test-base', baseCommit: base })
+    const head = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: target, encoding: 'utf8' })
+    assert.equal(head.status, 0, head.stderr)
+    assert.equal(head.stdout.trim(), base)
+  } finally {
+    await rm(root, { recursive: true, force: true })
   }
 })

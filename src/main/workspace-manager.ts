@@ -1243,7 +1243,7 @@ export class WorkspaceManager {
     const label = options.name?.trim() || `${source.name}-tab`
     const branch = worktreeBranchName(label, id)
     const targetPath = worktreeTargetPath(getGuiDataPath(MANAGED_WORKTREES_DIR), git.repoRoot, id)
-    await createGitWorktree({ sourceCwd: source.path, targetPath, branch })
+    await createGitWorktree({ sourceCwd: source.path, targetPath, branch, baseCommit: options.baseCommit })
 
     const workspace: Workspace = {
       id,
@@ -1255,7 +1255,7 @@ export class WorkspaceManager {
       kind: 'worktree',
       repoRoot: git.repoRoot,
       branch,
-      baseRef: git.head,
+      baseRef: options.baseCommit ?? git.head,
       sourceWasDirty,
       managed: true,
       ...(taskPrompt ? { taskPrompt } : {}),
