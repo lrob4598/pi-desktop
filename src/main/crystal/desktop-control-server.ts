@@ -39,6 +39,7 @@ export function createPiDesktopControlServer(options: DesktopControlServerOption
   const handler = async (request: DesktopControlRequest): Promise<unknown> => {
     if (request.version !== 1 || !sameToken(String(request.token ?? ""), options.token))
       throw new Error("Unauthorized Pi Desktop control request");
+    if (request.operation === "getCapabilities") return { version: 1, modelOverride: true };
     if (request.operation === "listWorkspaces") return await options.bridge.listNativeWorkspaces();
     if (request.operation === "getSourceWorkspace") {
       const payload = request.payload as { projectId?: unknown; sourceWorkspaceId?: unknown } | null;

@@ -1476,6 +1476,8 @@ export type WorkspaceKind = 'folder' | 'worktree' | 'repoSet'
 export interface WorkspaceTabOptions {
   name?: string
   sourceWorkspaceId?: string
+  /** Internal, verified commit used by an enrolled Crystal project. */
+  baseCommit?: string
   /** Optional Pi session to fork into the new worktree. */
   forkSessionPath?: string
   /** Original task text used to reuse the same worktree on a later launch. */

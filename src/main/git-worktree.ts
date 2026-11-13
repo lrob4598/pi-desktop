@@ -185,6 +185,10 @@ export function worktreeTargetPath(
   workspaceId: string,
 ): string {
   const repoName = slugifyWorktreePart(basename(repoRoot))
+  const projectWorktrees = process.env.PI_DESKTOP_PROJECT_WORKTREES_ROOT
+  if (projectWorktrees) {
+    return join(projectWorktrees, `${basename(repoRoot)}-worktrees`, 'pi-desktop', `${repoName}-${workspaceId}`)
+  }
   return join(guiWorktreesDir, repoName, `${repoName}-${workspaceId}`)
 }
 
@@ -196,9 +200,13 @@ export async function createGitWorktree(options: {
   sourceCwd: string
   targetPath: string
   branch: string
+  baseCommit?: string
 }): Promise<void> {
+  if (options.baseCommit && !/^[a-f0-9]{40}$/i.test(options.baseCommit)) {
+    throw new Error('Invalid worktree base commit')
+  }
   await mkdir(dirname(options.targetPath), { recursive: true })
-  await runGit(['worktree', 'add', '-b', options.branch, options.targetPath, 'HEAD'], options.sourceCwd)
+  await runGit(['worktree', 'add', '-b', options.branch, options.targetPath, options.baseCommit ?? 'HEAD'], options.sourceCwd)
 }
 
 /** Remove only a clean worktree. Git refuses dirty worktrees, preserving edits. */

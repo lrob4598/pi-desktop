@@ -1134,7 +1134,16 @@ export class WorkspaceManager {
   private isManagedWorktreePath(path: string): boolean {
     const root = resolveRealPath(getGuiDataPath(MANAGED_WORKTREES_DIR))
     const candidate = resolveRealPath(path)
-    return root !== null && candidate !== null && isPathWithin(root, candidate)
+    if (!candidate) return false
+    if (root && isPathWithin(root, candidate)) return true
+    const projectsRoot = process.env.PI_DESKTOP_PROJECT_WORKTREES_ROOT
+    if (!projectsRoot) return false
+    const parent = dirname(candidate)
+    if (basename(parent).toLowerCase() !== 'pi-desktop' ||
+        !basename(dirname(parent)).toLowerCase().endsWith('-worktrees')) return false
+    const configured = resolveRealPath(projectsRoot)
+    const container = resolveRealPath(dirname(dirname(parent)))
+    return configured !== null && container !== null && pathsEqual(configured, container)
   }
 
   /**
@@ -1234,7 +1243,7 @@ export class WorkspaceManager {
     const label = options.name?.trim() || `${source.name}-tab`
     const branch = worktreeBranchName(label, id)
     const targetPath = worktreeTargetPath(getGuiDataPath(MANAGED_WORKTREES_DIR), git.repoRoot, id)
-    await createGitWorktree({ sourceCwd: source.path, targetPath, branch })
+    await createGitWorktree({ sourceCwd: source.path, targetPath, branch, baseCommit: options.baseCommit })
 
     const workspace: Workspace = {
       id,
@@ -1246,7 +1255,7 @@ export class WorkspaceManager {
       kind: 'worktree',
       repoRoot: git.repoRoot,
       branch,
-      baseRef: git.head,
+      baseRef: options.baseCommit ?? git.head,
       sourceWasDirty,
       managed: true,
       ...(taskPrompt ? { taskPrompt } : {}),

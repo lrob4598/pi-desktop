@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 
 export const PI_DESKTOP_CONTROL_VERSION = 1;
 export const DEFAULT_PI_DESKTOP_PIPE = String.raw`\\.\pipe\crystal-pi-desktop-v1`;
-export type DesktopOperation = "listWorkspaces" | "getProvisionStatus" | "createIsolatedTab" | "getSourceWorkspace";
+export type DesktopOperation = "getCapabilities" | "listWorkspaces" | "getProvisionStatus" | "createIsolatedTab" | "getSourceWorkspace";
 export interface DesktopSourceWorkspace { id: string; repoRoot: string; }
 export interface DesktopWorkspace {
   id: string;
@@ -17,6 +17,8 @@ export interface DesktopProvisionRequest {
   sourceWorkspaceId: string;
   projectId: string;
   name: string;
+  provider?: string;
+  model?: string;
 }
 export interface DesktopProvisionResult {
   state: "created" | "creating" | "unknown";
@@ -50,7 +52,9 @@ function nonempty(v: unknown): v is string {
 export function validateProvisionRequest(value: DesktopProvisionRequest): void {
   if (!value || !nonempty(value.operationId) || !nonempty(value.sourceWorkspaceId) ||
       !/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}$/.test(value.projectId) ||
-      !nonempty(value.name) || value.name.length > 120 || value.operationId.length > 160) {
+      !nonempty(value.name) || value.name.length > 120 || value.operationId.length > 160 ||
+      ((value.provider !== undefined || value.model !== undefined) &&
+       (!nonempty(value.provider) || !nonempty(value.model) || value.provider.length > 120 || value.model.length > 160))) {
     throw new TypeError("Invalid Pi Desktop provisioning request");
   }
 }
@@ -119,6 +123,12 @@ export class PiDesktopControlClient {
   }
   async listWorkspaces(): Promise<DesktopWorkspace[]> {
     return await this.call("listWorkspaces", {}) as DesktopWorkspace[];
+  }
+  async getCapabilities(): Promise<{ version: 1; modelOverride: boolean }> {
+    const result = await this.call("getCapabilities", {}) as { version: 1; modelOverride: boolean };
+    if (!result || result.version !== 1 || typeof result.modelOverride !== "boolean")
+      throw new Error("Pi Desktop control capabilities are not compatible");
+    return result;
   }
   async getSourceWorkspace(projectId: string, sourceWorkspaceId: string): Promise<DesktopSourceWorkspace | undefined> {
     if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}$/.test(projectId) ||
